@@ -1,0 +1,84 @@
+# -*- coding: utf-8 -*-
+"""
+
+
+"""
+#%%
+import brian2 as br
+import numpy as np
+import itertools
+import reproducibility_support_functions as repro
+
+# Set some parameters
+timeStepS = 0.001 * br.second
+dur = 1.000 * br.second
+times = np.arange(0,  dur, timeStepS)
+
+reps = 100
+
+#cw_list = (0.000010, 0.000050, 0.000100, 0.000500, 0.001000) * br.second
+cw_list = (0.000500, 0.001000) * br.second
+n_spikes_list = np.arange(1, 21, 2)
+
+psthbin = 2 * br.usecond
+mw_time = 0.02 * br.second
+
+# Output variables
+results_b = []
+results_j = []
+key = []
+curve_b = []
+curve_j = []
+times_spikes = []
+times_y = []
+rates = []
+
+for cw, n_spikes in itertools.product(cw_list, n_spikes_list):
+    
+    print(cw, n_spikes)
+    key.append((cw, n_spikes))
+        
+    vt = [np.random.rand(len(times)) for r in np.arange(0, reps)]
+    spikes = [(n_spikes * timeStepS) / br.second > v for v in vt]
+    spikes = [np.array([float(i) * timeStepS for i, x in enumerate(s) if x]) for s in spikes]
+    spikes = [s * br.second for s in spikes]
+    
+    rate = np.mean([len(i) for i in spikes])
+    spikes_flat = [j for i in spikes for j in i]
+
+    y = repro.make_y(spikes)
+    
+    PSTH = repro.make_PSTH(spikes_flat, dur, cw, reps)
+    
+    try:
+        t, SAC = repro.autocor(PSTH, reps, T = mw_time, bin = cw)
+        SAC = SAC * (br.Hz ** 2)
+        
+        SACcurve_b, strength_b = repro.brettenorm(SAC, np.mean(PSTH), cw)        
+        SACcurve_j, strength_j = repro.jorisnorm(SAC, reps, np.mean(PSTH), dur, cw)
+        
+    except:
+        strength_b = None
+        SACcurve_b = None
+        strength_j = None
+        SACcurve_j = None
+        pass
+    
+    times_spikes.append([spikes])
+    times_y.append([y])
+    results_b.append(strength_b)
+    curve_b.append(SACcurve_b)  
+    results_j.append(strength_j)
+    curve_j.append(SACcurve_j) 
+    rates.append(rate)
+
+
+np.savez('testing_results_rand', 
+         results_b = results_b,
+         results_j = results_j,
+         key = key, 
+         curve_b = curve_b,
+         curve_j = curve_j,
+         times_spikes = times_spikes,
+         times_y = times_y,
+         rates = rates)

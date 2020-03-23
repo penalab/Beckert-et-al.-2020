@@ -1,0 +1,93 @@
+# -*- coding: utf-8 -*-
+"""
+This will calculate the SAC for spike times
+Can be modified to programmatically iterate across different variables such as
+Bin Size
+"""
+from os import chdir
+import numpy.random as rand
+import scipy.io as sio
+import numpy as np
+import time
+
+chdir('f:\desktop\Code\python\ReproducibilityCode')
+import repro_functions as rp
+import repro_loaddata as ld
+chdir('f:\desktop\WorkingFolder')
+
+# Used to easily access the functions in repro_loaddata, also facilitates automation
+def load_data(datatype):
+    func = switcher.get(datatype, "nothing")
+    TrialData, dur, name, files = func()
+    chdir('f:\desktop\WorkingFolder')
+    return TrialData, dur, name, files
+
+switcher = {
+        1: ld.load_icls_itd,
+        2: ld.load_icls_ild,
+        3: ld.load_icls_ff,
+        4: ld.load_ot_ff}
+
+def subsample(Trial, boot_percent):
+    triallength = np.size(Trial, 1)
+    TrialOut = Trial[:, 0:int(triallength * boot_percent)]
+    for i, t in enumerate(Trial):
+        ix = np.sort(rand.choice(np.arange(0, triallength), size = int(triallength * boot_percent), replace = True))
+        TrialOut[i, :] = t[ix]
+    return TrialOut
+    
+#%%
+# Set some variables
+numrep = 100        # Number of repetitions for bootstrapping
+boot_percent = 0.5  # What fraction of the trials do you want to use for the bootstrapping?
+curve_time = 100    # Size of the SAC in ms (plus/minus)
+
+datatype = 4        # Which region would you like to analyze?
+
+TrialData, dur, name, files = load_data(datatype)
+
+#%%
+
+factor = [100000, 10000, 1000]
+ran =[1., 1., 1.]
+
+cw = [np.arange(r, 10.) / f for r, f in zip(ran, factor)]
+cw = [c.tolist() for c in cw]
+cw = [y for x in cw for y in x]
+
+del factor, ran
+
+for r in np.arange(0, numrep):
+    
+    ti = time.time()
+    
+    print(r)
+    
+    TrialOut = []
+    for t in TrialData:
+        if len(t) > 1:
+            TrialOut.append(subsample(t, boot_percent))
+            
+    for c in cw:
+        
+        hist, full_fr, x_spikes, y_spikes, reps = rp.step1_makehist_gettimes(TrialOut, c, dur)
+        hist_strip = rp.best_fr(hist)
+        repro = rp.step2_calcSAC_stripped(hist_strip, c, reps, curve_time)
+        
+        # save in a matlab format for further analysis
+        curve = [cu for cu in repro['curve']]
+        cw_str = str(int(c*100000))
+        r_str = str(r)
+        sio.savemat('repro_' + name + '_c' + cw_str.zfill(5) + '_r' + r_str.zfill(3) + '.mat',{
+                 'curve':curve,
+                 'cw':c,
+                 'neuron':repro['neuron'].tolist(), 
+                 'depvar':repro['depvar'].tolist(),
+                 'fr':repro['fr'].tolist(), 
+                 'full_fr':full_fr, 
+                 'reps':reps, 
+                 'dur':dur})
+    
+    print('Elapsed: %s' %(time.time() - ti))
+    
+    

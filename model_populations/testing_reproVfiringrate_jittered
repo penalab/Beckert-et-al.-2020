@@ -1,0 +1,85 @@
+# -*- coding: utf-8 -*-
+#%% some importing
+import brian2 as br
+import random as rd
+import numpy as np
+import itertools
+import reproducibility_support_functions as repro
+
+    
+# These are variables that being changed to check the effect on reproducibility
+#cw_list = (0.000010, 0.000050, 0.000100, 0.000500, 0.001000) * br.second
+cw_list = (0.000500, 0.001000) * br.second
+noise_list = np.arange(0, 31, 5)
+n_spikes_list = np.arange(1, 21, 2)
+
+# Output variables
+results_b = []
+results_j = []
+key = []
+curve_b = []
+curve_j = []
+times_spikes = []
+times_y = []
+
+# Some constants
+dur = 1 * br.second
+reps = 100
+mw_time = 0.005 * br.second
+psthbin = 2 * br.usecond
+
+for cw, noise, n_spikes in itertools.product(cw_list, noise_list, n_spikes_list):
+
+    print(cw, noise, n_spikes)
+    key.append((cw,noise,n_spikes))
+    
+    maxWidth = int(round(mw_time / cw))
+    
+    spi = np.round(np.random.rand(n_spikes), decimals = 8) * dur
+    spike_uni = [spi for s in np.arange(0, reps, 1)]
+    
+    spike = np.zeros( (reps, n_spikes) )
+    
+    if noise:
+        for r, s in itertools.product(np.arange(0, reps), np.arange(0, n_spikes)):
+            spike[r,s] = spike_uni[r][s] + rd.randrange(-noise, noise, 1) * br.msecond      
+    else:
+        spike = spike_uni
+        
+    y = repro.make_y(spike)
+    
+    PSTH = repro.make_PSTH(spike, dur, cw, reps)
+    
+    try:
+        t, SAC = repro.autocor(PSTH, reps, T = mw_time, bin = cw)
+        SAC = SAC * (br.Hz ** 2)
+        
+        SACcurve_b, strength_b = repro.brettenorm(SAC, np.mean(PSTH), cw)
+        SACcurve_j, strength_j = repro.jorisnorm(SAC, reps, np.mean(PSTH), dur, cw)
+        
+    except:
+        strength_b = None
+        SACcurve_b = None
+        strength_j = None
+        SACcurve_j = None
+        pass
+    
+    spike = np.reshape(spike, -1)
+    y = np.reshape(y, -1)
+    
+    times_spikes.append([spike])
+    times_y.append([y])
+    results_b.append(strength_b)
+    curve_b.append(SACcurve_b)  
+    results_j.append(strength_j)
+    curve_j.append(SACcurve_j) 
+
+
+np.savez('testing_results_jittered', 
+         results_b = results_b,
+         results_j = results_j,
+         key = key, 
+         curve_b = curve_b,
+         curve_j = curve_j,
+         times_spikes = times_spikes,
+         times_y = times_y)
